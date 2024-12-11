@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/opt/homebrew/bin/bash
 #
 # ecoclean.sh - Script para eliminar archivos temporales y detectar/eliminar duplicados.
 #
@@ -7,9 +7,9 @@
 # Descripción:
 # Sprint 1: Eliminar archivos temporales (.tmp, .log, .bak).
 # Sprint 2: Detectar y eliminar duplicados basados en hash MD5.
+# Sprint 3: Interfaz interactiva en terminal, con menú, confirmaciones y reporte previo.
 #
 # Uso: ./ecoclean.sh [directorio_opcional]
-#
 
 set -e
 set -u
@@ -54,76 +54,51 @@ remove_temp_files() {
 #------------------------------------------------------------
 # Función: remove_duplicates
 # Detecta duplicados por hash MD5 y elimina todos menos uno por grupo.
-# Retorna por stdout la lista de archivos que quedan tras la eliminación.
-#
-# Lógica:
-# 1. Crear un archivo temporal para guardar "HASH FILE".
-# 2. Calcular hash MD5 para cada archivo, guardar en ese archivo temporal.
-# 3. Ordenar por HASH.
-# 4. Recorrer el archivo: para cada grupo de HASH idéntico, conservar el primero
-#    y eliminar los restantes.
-# 5. Imprimir la lista final de archivos sin duplicados sobrantes.
+# Devuelve por stdout la lista de archivos que quedan tras la eliminación.
 #------------------------------------------------------------
 remove_duplicates() {
+  declare -A HASH_MAP
   local OS_NAME
   OS_NAME=$(uname)
 
-  # Leemos todos los archivos de stdin
   local FILES=()
   while IFS= read -r FILE; do
     FILES+=("$FILE")
   done
 
-  # Si no hay archivos, devolvemos nada
-  if (( ${#FILES[@]} == 0 )); then
-    echo "No se encontraron archivos duplicados."
-    return
-  fi
-
-  # Archivo temporal para hashes
-  local TMP_HASH_FILE
-  TMP_HASH_FILE=$(mktemp)
-
-  # Generar hash para cada archivo y almacenarlo
   for FILE in "${FILES[@]}"; do
     if [[ -f "$FILE" ]]; then
       local HASH
       if [[ "$OS_NAME" == "Darwin" ]]; then
-        # macOS usa 'md5' en lugar de 'md5sum'
+        # macOS
         HASH=$(md5 "$FILE" | awk '{print $4}')
       else
+        # Linux u otros con md5sum
         HASH=$(md5sum "$FILE" | awk '{print $1}')
       fi
-      echo "$HASH $FILE" >> "$TMP_HASH_FILE"
+
+      # Evitar variable no inicializada usando "${...-}"
+      HASH_MAP["$HASH"]="${HASH_MAP["$HASH"]-} $FILE"
     fi
   done
 
-  # Ordenar por HASH (primera columna)
-  sort "$TMP_HASH_FILE" -o "$TMP_HASH_FILE"
-
-  local CURRENT_HASH=""
   local TOTAL_DUPLICATES=0
   local UNIQUE_FILES=()
 
-  while IFS= read -r LINE; do
-    # Dividir línea en HASH y FILEPATH
-    local HASH FILEPATH
-    HASH=$(echo "$LINE" | awk '{print $1}')
-    FILEPATH=$(echo "$LINE" | awk '{print $2}')
-
-    if [[ "$HASH" != "$CURRENT_HASH" ]]; then
-      # Nuevo grupo de HASH
-      CURRENT_HASH="$HASH"
-      UNIQUE_FILES+=("$FILEPATH")
+  for KEY in "${!HASH_MAP[@]}"; do
+    read -ra FILE_LIST <<< "${HASH_MAP["$KEY"]}"
+    if (( ${#FILE_LIST[@]} > 1 )); then
+      # Conservar el primero, eliminar los demás
+      UNIQUE_FILES+=("${FILE_LIST[0]}")
+      for (( i=1; i<${#FILE_LIST[@]}; i++ )); do
+        echo "Duplicado detectado. Eliminando: ${FILE_LIST[i]}"
+        rm -f "${FILE_LIST[i]}"
+        ((TOTAL_DUPLICATES++))
+      done
     else
-      # Mismo hash => duplicado, eliminar
-      echo "Duplicado detectado. Eliminando: $FILEPATH"
-      rm -f "$FILEPATH"
-      ((TOTAL_DUPLICATES++))
+      UNIQUE_FILES+=("${FILE_LIST[0]}")
     fi
-  done < "$TMP_HASH_FILE"
-
-  rm -f "$TMP_HASH_FILE"
+  done
 
   if (( TOTAL_DUPLICATES > 0 )); then
     echo "Total de duplicados eliminados: $TOTAL_DUPLICATES"
@@ -131,21 +106,108 @@ remove_duplicates() {
     echo "No se encontraron archivos duplicados."
   fi
 
-  # Imprimimos la lista de archivos resultantes (sin duplicados sobrantes)
   for UF in "${UNIQUE_FILES[@]}"; do
     echo "$UF"
   done
 }
 
+#------------------------------------------------------------
+# Función: show_temp_files
+# Muestra la lista de archivos temporales (si hay).
+#------------------------------------------------------------
+show_temp_files() {
+  local TEMP_FILES
+  TEMP_FILES=$(get_temp_files)
+  if [[ -z "$TEMP_FILES" ]]; then
+    echo "No se encontraron archivos temporales."
+  else
+    echo "Archivos temporales encontrados:"
+    echo "$TEMP_FILES"
+  fi
+}
+
+#------------------------------------------------------------
+# Función: process_duplicates
+# Ejecuta la detección y eliminación de duplicados, mostrando el resultado.
+#------------------------------------------------------------
+process_duplicates() {
+  local TEMP_FILES
+  TEMP_FILES=$(get_temp_files)
+  if [[ -z "$TEMP_FILES" ]]; then
+    echo "No se encontraron archivos temporales para procesar duplicados."
+    return
+  fi
+
+  echo "Se analizarán los siguientes archivos para detectar duplicados:"
+  echo "$TEMP_FILES"
+
+  read -r -p "¿Desea continuar con la eliminación de duplicados? [s/N]: " CONFIRM
+  if [[ "$CONFIRM" =~ ^[Ss]$ ]]; then
+    local UNIQUE_FILES
+    # Usar printf para asegurar que cada archivo se procese en una línea separada
+    UNIQUE_FILES=$(printf "%s\n" "$TEMP_FILES" | remove_duplicates)
+    echo "Archivos resultantes tras eliminar duplicados:"
+    echo "$UNIQUE_FILES"
+  else
+    echo "Operación cancelada."
+  fi
+}
+
+#------------------------------------------------------------
+# Función: remove_all_temp_files_with_confirmation
+# Muestra los archivos temporales, pide confirmación y luego los elimina.
+#------------------------------------------------------------
+remove_all_temp_files_with_confirmation() {
+  local TEMP_FILES
+  TEMP_FILES=$(get_temp_files)
+  if [[ -z "$TEMP_FILES" ]]; then
+    echo "No se encontraron archivos temporales."
+    return
+  fi
+
+  echo "Se eliminarán los siguientes archivos temporales:"
+  echo "$TEMP_FILES"
+  read -r -p "¿Está seguro de que desea eliminarlos? [s/N]: " CONFIRM
+  if [[ "$CONFIRM" =~ ^[Ss]$ ]]; then
+    # Aquí también usamos printf para asegurar la correcta lectura línea a línea
+    printf "%s\n" "$TEMP_FILES" | remove_temp_files
+  else
+    echo "Operación cancelada."
+  fi
+}
+
+#------------------------------------------------------------
+# Función: show_menu
+# Presenta al usuario un menú interactivo con opciones.
+#------------------------------------------------------------
+show_menu() {
+  PS3="Seleccione una opción: "
+  local OPTS=("Mostrar archivos temporales"
+              "Detectar y eliminar duplicados"
+              "Eliminar todos los archivos temporales"
+              "Salir")
+
+  select OPT in "${OPTS[@]}"; do
+    case $REPLY in
+      1)
+        show_temp_files
+        ;;
+      2)
+        process_duplicates
+        ;;
+      3)
+        remove_all_temp_files_with_confirmation
+        ;;
+      4)
+        echo "Saliendo..."
+        break
+        ;;
+      *)
+        echo "Opción inválida. Intente nuevamente."
+        ;;
+    esac
+  done
+}
+
 # Flujo Principal
-TEMP_FILES=$(get_temp_files)
-if [[ -z "$TEMP_FILES" ]]; then
-  echo "No se encontraron archivos temporales."
-  exit 0
-fi
-
-# 1. Eliminar duplicados y obtener lista final de archivos (sin duplicados)
-UNIQUE_FILES=$(echo "$TEMP_FILES" | remove_duplicates)
-
-# 2. Eliminar todos los archivos temporales resultantes (UNIQUE_FILES)
-echo "$UNIQUE_FILES" | remove_temp_files
+show_menu
