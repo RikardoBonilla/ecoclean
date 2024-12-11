@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # ecoclean.sh - Script para eliminar archivos temporales (Sprint 1)
-# Autor: [Tu Nombre]
-# Fecha: [Fecha Actual]
+# Autor: Ricardo Andres Bonilla Prada
+# Fecha: 2024-12-10
 # Descripción: Este script busca y elimina archivos con extensiones .tmp, .log y .bak
 # en un directorio específico. Si no se proporciona directorio, se toma el actual.
 #
