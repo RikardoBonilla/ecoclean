@@ -8,28 +8,49 @@
 # Sprint 1: Eliminar archivos temporales (.tmp, .log, .bak).
 # Sprint 2: Detectar y eliminar duplicados basados en hash MD5.
 # Sprint 3: Interfaz interactiva en terminal, con menú, confirmaciones y reporte previo.
+# Sprint 4: Uso de archivo de configuración externo (ecoclean.conf) para personalizar extensiones y rutas.
 #
 # Uso: ./ecoclean.sh [directorio_opcional]
 
 set -e
 set -u
 
+# Intentar cargar la configuración
+CONFIG_FILE="$(dirname "$0")/ecoclean.conf"
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+else
+  # Valores por defecto si no existe el archivo de configuración
+  TEMP_EXTENSIONS="*.tmp *.log *.bak"
+  CLEAN_DIRS="$(pwd)"
+fi
+
+# Se mantiene TARGET_DIR por compatibilidad, 
+# pero ahora los archivos se buscarán en CLEAN_DIRS.
 TARGET_DIR="${1:-$(pwd)}"
 
 #------------------------------------------------------------
 # Función: get_temp_files
-# Obtiene la lista de archivos temporales.
+# Obtiene la lista de archivos temporales según las extensiones y directorios definidos.
 #------------------------------------------------------------
 get_temp_files() {
-  local EXTENSIONS=("*.tmp" "*.log" "*.bak")
+  # Convertir las variables a arreglos
+  local EXTENSIONS=($TEMP_EXTENSIONS)
+  local DIRECTORIES=($CLEAN_DIRS)
+
   local FILES_FOUND=()
 
-  for EXT in "${EXTENSIONS[@]}"; do
-    while IFS= read -r -d '' FILE; do
-      FILES_FOUND+=("$FILE")
-    done < <(find "${TARGET_DIR}" -type f -iname "${EXT}" -print0 2>/dev/null)
+  # Buscar en cada directorio y para cada extensión
+  for DIR in "${DIRECTORIES[@]}"; do
+    for EXT in "${EXTENSIONS[@]}"; do
+      while IFS= read -r -d '' FILE; do
+        FILES_FOUND+=("$FILE")
+      done < <(find "$DIR" -type f -iname "$EXT" -print0 2>/dev/null)
+    done
   done
 
+  # Imprimir la lista de archivos encontrados, uno por línea
   for FILE in "${FILES_FOUND[@]}"; do
     echo "$FILE"
   done
