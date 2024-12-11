@@ -51,6 +51,7 @@ EcoClean es una herramienta en Bash que permite limpiar archivos temporales, det
    # ecoclean.conf
    TEMP_EXTENSIONS="*.tmp *.log *.bak"
    CLEAN_DIRS="/Users/ricardo/Documents/ProjectsToIA/Bash/ecoclean /tmp"
+   LOG_FILE="$(dirname "$0")/logs/ecoclean.log"
    ```
    
    - `TEMP_EXTENSIONS`: Lista de extensiones separadas por espacio.
@@ -70,9 +71,12 @@ EcoClean es una herramienta en Bash que permite limpiar archivos temporales, det
 
 Ejecuta:
 ```bash
-./ecoclean.sh
+./ecoclean.sh 
 ```
-
+o tambien puede ser :
+```bash
+/usr/local/bin/bash ./ecoclean.sh 
+```
 Aparecerá un menú interactivo con las siguientes opciones:
 
 1. **Mostrar archivos temporales:**  
